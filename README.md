@@ -1,3 +1,28 @@
 # 168servos
 Controls 168 servos by an STM32 microcontroller
 1
+
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
+![7servos](doc/7servos.png)
