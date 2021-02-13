@@ -1,109 +1,143 @@
 /*
- * servos.c
+ *  Project:      168servos
+ *  File:         servos.c
+ *  Author:       Gerd Bartelt - www.sebulli.com
  *
- *  Created on: Feb 7, 2021
- *      Author: gerd
+ *  Description:  servos module
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
  */
+
 
 /* Includes ------------------------------------------------------------------*/
 #include "servos.h"
 #include "tim.h"
 
 /* Variables -----------------------------------------------------------------*/
-uint8_t servos_index[SERVOS_TOTAL];
-int servos_cnt;
-SERVO_PARALLEL_s servos_parallel[SERVOS_SERIAL];
-SERVO_ACTION_s servos_actions[2*SERVOS_TOTAL+2];
-int servos_actions_cnt;
-int servos_actions_len;
-int bServos_RequestUpdate;
+uint8_t servos_au8Indices[SERVOS_TOTAL];
+int servos_iCnt;
+SERVO_s servos_asAll[SERVOS_TOTAL];
+SERVO_PARALLEL_s servos_asParallel[SERVOS_SERIAL];
+SERVO_ACTION_s servos_asActions[2*SERVOS_TOTAL+2];
 
-uint16_t u16servosARR;
-uint32_t u32ServosBSSRVal;
-__IO uint32_t* pServosBSSR;
-__IO uint32_t u32ServosDummyBSSR;
-SERVO_ACTION_s* pServosAction;
+int servos_iActionCnt;
+int servos_iActionLen;
+int servos_bRequestUpdate;
+uint16_t servos_u16ARR;
+uint32_t servos_u32BSSRVal;
+__IO uint32_t* servos_pBSSR;
+__IO uint32_t servos_u32DummyBSSR;
+SERVO_ACTION_s* servos_pAction;
 
-SERVOS_s  servos;
 
 /* Prototypes of static function ---------------------------------------------*/
 static void SERVOS_Update(void);
+__STATIC_INLINE void SERVOS_Swap(SERVO_s* thisServo, SERVO_s* otherServo, SERVO_PARALLEL_s* servosParallel);
 
 
 /* Functions -----------------------------------------------------------------*/
 
 /**
  * Initialize this module
+ * Initializes the data fields and starts the timer with an empty sequence
+ * with 20ms period time
  *
  */
 void SERVOS_Init()
 {
-	servos_cnt = 0;
+	servos_iCnt = 0;
 	for (int i=0; i<SERVOS_TOTAL; i++)
 	{
-		servos_index[i] = SERVOS_ID_EMPTY;
+		servos_au8Indices[i] = SERVOS_ID_EMPTY;
 	}
 	for (int i=0; i<SERVOS_SERIAL; i++)
 	{
-		servos_parallel[i].cnt = 0;
+		servos_asParallel[i].cnt = 0;
 	}
 
-	servos_actions[0].pServosBSSR = &(u32ServosDummyBSSR);
-	servos_actions[0].u32ServosBSSRVal = 0;
-	servos_actions[0].u16ARR = 0 ;
+	servos_asActions[0].pServosBSSR = &(servos_u32DummyBSSR);
+	servos_asActions[0].u32ServosBSSRVal = 0;
+	servos_asActions[0].u16ARR = 0 ;
 
-	pServosBSSR      = servos_actions[1].pServosBSSR = &(u32ServosDummyBSSR);
-	u32ServosBSSRVal = servos_actions[1].u32ServosBSSRVal = 0;
-	u16servosARR     = servos_actions[1].u16ARR = 1000-1;
+	servos_pBSSR      = servos_asActions[1].pServosBSSR = &(servos_u32DummyBSSR);
+	servos_u32BSSRVal = servos_asActions[1].u32ServosBSSRVal = 0;
+	servos_u16ARR     = servos_asActions[1].u16ARR = 1000-1;
 
-	servos_actions_cnt = 0;
-	servos_actions_len = 2;
+	servos_iActionCnt = 0;
+	servos_iActionLen = 2;
 
-	bServos_RequestUpdate = 0;
+	servos_bRequestUpdate = 0;
 	HAL_TIM_Base_Start_IT(&htim6);
 }
 
 /**
  * Add a new servo
  *
+ * \param u8ServoId a unique ID of the servo from 0..167 to identify it
+ * \param u16GpioPin pin of the servo pin
+ * \param pGpioPort port of the servo pin
+ *
+ * \return error result
+ *
  */
 int SERVOS_Configure(uint8_t u8ServoId, uint16_t u16GpioPin, GPIO_TypeDef* pGpioPort)
 {
-	int serialIndex;
-	int parallelIndex;
+	int iSerialIx;
+	int iParallelIx;
+
 	// Check range of u8ServoId
 	if (u8ServoId >= SERVOS_TOTAL)
 	{
 		return SERVOS_ERROR_ID_OUT_OF_RANGE;
 	}
 
-	if (servos_index[u8ServoId] != SERVOS_ID_EMPTY)
+	// configure a servo only one time
+	if (servos_au8Indices[u8ServoId] != SERVOS_ID_EMPTY)
 	{
 		return SERVOS_ERROR_ALREADY_CONFIGURED;
 	}
 
 	// Add servoID to table
-	servos_index[u8ServoId] = servos_cnt;
-	servos.lin[servos_cnt].value = SERVOS_DEFAULT_VAL;
-	servos.lin[servos_cnt].attached = 0;
-	servos.lin[servos_cnt].servoIndex = servos_cnt;
-	servos.lin[servos_cnt].pGpioPort = pGpioPort;
-	servos.lin[servos_cnt].u16GpioPin = u16GpioPin;
+	servos_au8Indices[u8ServoId] = servos_iCnt;
+	servos_asAll[servos_iCnt].value = SERVOS_DEFAULT_VAL;
+	servos_asAll[servos_iCnt].attached = 0;
+	servos_asAll[servos_iCnt].servoIndex = servos_iCnt;
+	servos_asAll[servos_iCnt].pGpioPort = pGpioPort;
+	servos_asAll[servos_iCnt].u16GpioPin = u16GpioPin;
 
 	// update the parallel counter
-	serialIndex = servos_cnt & SERVOS_SERIAL_MASK;
-	parallelIndex = servos_cnt >> SERVOS_SERIAL_SHIFT;
-	servos_parallel[serialIndex].cnt = parallelIndex + 1;
-	servos_parallel[serialIndex].servos[parallelIndex] = servos_cnt;
-	servos.lin[servos_cnt].parallelSortPos = parallelIndex;
+	iSerialIx = servos_iCnt & SERVOS_SERIAL_MASK;
+	iParallelIx = servos_iCnt >> SERVOS_SERIAL_SHIFT;
+	servos_asParallel[iSerialIx].cnt = iParallelIx + 1;
+	servos_asParallel[iSerialIx].servos[iParallelIx] = servos_iCnt;
+	servos_asAll[servos_iCnt].parallelSortPos = iParallelIx;
 
 	//added
-	servos_cnt++;
+	servos_iCnt++;
 
 	return SERVOS_ERROR_OK;
 }
 
-
+/**
+ * Swaps 2 entries of the parallel structure to sort it
+ *
+ * \param thisServo one servo
+ * \param otherServo and the other servo to swap
+ * \param servosParallel the current parallel structure
+ *
+ */
 __STATIC_INLINE void SERVOS_Swap(SERVO_s* thisServo, SERVO_s* otherServo, SERVO_PARALLEL_s* servosParallel)
 {
 	// Swap
@@ -115,13 +149,17 @@ __STATIC_INLINE void SERVOS_Swap(SERVO_s* thisServo, SERVO_s* otherServo, SERVO_
 
 
 /**
- * Set the value of a servo
+ * Set the value of a servo, attach it if not and sort the parallel structure
+ *
+ * \param u8ServoId Id of the servo
+ * \param u32Value the new value
+ *
+ * \return error result
  *
  */
 int SERVOS_Set(uint8_t u8ServoId, uint32_t u32Value)
 {
 	int servoindex;
-	uint32_t u32ValueOld;
 	int serialIndex;
 	int bFound;
 	SERVO_s* thisServo;
@@ -140,28 +178,28 @@ int SERVOS_Set(uint8_t u8ServoId, uint32_t u32Value)
 		u32Value = SERVOS_MAXVAL;
 	}
 
-	// Set value and attach servo
-	servoindex = servos_index[u8ServoId];
 
+	// Get reference of the servo
+	servoindex = servos_au8Indices[u8ServoId];
+	// Check if configured
 	if (servoindex == SERVOS_ID_EMPTY)
 	{
 		return SERVOS_ERROR_NOT_CONFIGURED;
 	}
+	thisServo = &servos_asAll[servoindex];
 
-	thisServo = &servos.lin[servoindex];
-
-	u32ValueOld = thisServo->value;
-	thisServo->value = u32Value;
+	// Attach it if not
 	thisServo->attached = 1;
 
 	// has the value changed?
-	if (u32ValueOld != u32Value)
+	if (thisServo->value != u32Value)
 	{
-		thisServo->modified = 1;
+		thisServo->value = u32Value;
+
 		// update the parallel counter
 		serialIndex = servoindex & SERVOS_SERIAL_MASK;
 		//parallelIndex = servos_cnt >> SERVOS_SERIAL_SHIFT;
-		servosParallel = &servos_parallel[serialIndex];
+		servosParallel = &servos_asParallel[serialIndex];
 
 		// Are there more than 1 servos, we have to sort them
 		if ( servosParallel->cnt > 1)
@@ -173,7 +211,7 @@ int SERVOS_Set(uint8_t u8ServoId, uint32_t u32Value)
 
 				if (thisServo->parallelSortPos > 0)
 				{
-					otherServo = &servos.lin[servosParallel->servos[(thisServo->parallelSortPos)-1]];
+					otherServo = &servos_asAll[servosParallel->servos[(thisServo->parallelSortPos)-1]];
 					if (u32Value < 	otherServo->value )
 					{
 						bFound = 1;
@@ -190,7 +228,7 @@ int SERVOS_Set(uint8_t u8ServoId, uint32_t u32Value)
 
 				if (thisServo->parallelSortPos < (servosParallel->cnt-1))
 				{
-					otherServo = &servos.lin[servosParallel->servos[(thisServo->parallelSortPos)+1]];
+					otherServo = &servos_asAll[servosParallel->servos[(thisServo->parallelSortPos)+1]];
 					if (u32Value  >	otherServo->value )
 					{
 						bFound = 1;
@@ -210,6 +248,9 @@ int SERVOS_Set(uint8_t u8ServoId, uint32_t u32Value)
 /**
  * Detach a servo
  *
+ * \param u8ServoId Id of the servo
+ *
+ * \return error result
  */
 int SERVOS_Detach(uint8_t u8ServoId)
 {
@@ -222,19 +263,23 @@ int SERVOS_Detach(uint8_t u8ServoId)
 	}
 
 	// Detach servo
-	servoindex = servos_index[u8ServoId];
+	servoindex = servos_au8Indices[u8ServoId];
 	if (servoindex == SERVOS_ID_EMPTY)
 	{
 		return SERVOS_ERROR_NOT_CONFIGURED;
 	}
 
-	servos.lin[servoindex].attached = 0;
+	servos_asAll[servoindex].attached = 0;
 
 	return SERVOS_ERROR_OK;
 }
 
 /**
- * Detach a servo
+ * Attach a servo
+ *
+ * \param u8ServoId Id of the servo
+ *
+ * \return error result
  *
  */
 int SERVOS_Attach(uint8_t u8ServoId)
@@ -248,112 +293,117 @@ int SERVOS_Attach(uint8_t u8ServoId)
 	}
 
 	// Attach servo
-	servoindex = servos_index[u8ServoId];
+	servoindex = servos_au8Indices[u8ServoId];
 	if (servoindex == SERVOS_ID_EMPTY)
 	{
 		return SERVOS_ERROR_NOT_CONFIGURED;
 	}
 
-	servos.lin[servoindex].attached = 1;
+	servos_asAll[servoindex].attached = 1;
 
 	return SERVOS_ERROR_OK;
 }
 
 
 /**
- * Update the timer table
+ * Update the action table for the ISR
  *
  */
 static void SERVOS_Update(void)
 {
-	int time_us = 0;
-	int time_us_last = 0;
-	int action_cnt;
-	int parallelPulsesTime;
-	SERVO_s* pServo;
-	SERVO_PARALLEL_s* servosParallel;
+	int iTimeUs = 0;
+	int iTimeUsLast = 0;
+	int iActionCnt;
+	int iParallelPulsesTime;
+	SERVO_s* psServo;
+	SERVO_PARALLEL_s* psServosParallel;
 
-	action_cnt = 1;
+	iActionCnt = 1;
 	for (int s=0; s<SERVOS_SERIAL; s++)
 	{
-		servosParallel = &servos_parallel[s];
-		parallelPulsesTime = s * SERVOS_TIME_PULSE_GRID;
+		psServosParallel = &servos_asParallel[s];
+		iParallelPulsesTime = s * SERVOS_TIME_PULSE_GRID;
 
-		for (int p=0; p<servosParallel->cnt; p++)
+		// Set the action for all positive edged of the servo pulses that
+		// are controlled in parallel
+		for (int p=0; p<psServosParallel->cnt; p++)
 		{
-			pServo = &servos.lin[servosParallel->servos[p]];
-			time_us = p * SERVOS_TIME_OFFSET_PARALLEL + parallelPulsesTime;
-			servos_actions[action_cnt].pServosBSSR = &pServo->pGpioPort->BSRR;
-			if (pServo->attached)
+			psServo = &servos_asAll[psServosParallel->servos[p]];
+			iTimeUs = p * SERVOS_TIME_OFFSET_PARALLEL + iParallelPulsesTime;
+			servos_asActions[iActionCnt].pServosBSSR = &psServo->pGpioPort->BSRR;
+			if (psServo->attached)
 			{
-				servos_actions[action_cnt].u32ServosBSSRVal = pServo->u16GpioPin;
+				servos_asActions[iActionCnt].u32ServosBSSRVal = psServo->u16GpioPin;
 			}
 			else
 			{
-				servos_actions[action_cnt].u32ServosBSSRVal = 0;
+				servos_asActions[iActionCnt].u32ServosBSSRVal = 0;
 			}
-			servos_actions[action_cnt-1].u16ARR = time_us - time_us_last - 1;
-			time_us_last = time_us;
-			action_cnt++;
+			servos_asActions[iActionCnt-1].u16ARR = iTimeUs - iTimeUsLast - 1;
+			iTimeUsLast = iTimeUs;
+			iActionCnt++;
 		}
-		for (int p=0; p<servosParallel->cnt; p++)
+		// Set the action for all negative edged of the servo pulses that
+		// are controlled in parallel
+		for (int p=0; p<psServosParallel->cnt; p++)
 		{
-			pServo = &servos.lin[servosParallel->servos[p]];
-			time_us = pServo->value + SERVOS_TIME_PULSE_BASE
-					+  p * SERVOS_TIME_OFFSET_PARALLEL + parallelPulsesTime;
-			servos_actions[action_cnt].pServosBSSR = &pServo->pGpioPort->BSRR;
-			servos_actions[action_cnt].u32ServosBSSRVal = (uint32_t)pServo->u16GpioPin << 16;
-			servos_actions[action_cnt-1].u16ARR = time_us - time_us_last - 1;
-			time_us_last = time_us;
-			action_cnt++;
+			psServo = &servos_asAll[psServosParallel->servos[p]];
+			iTimeUs = psServo->value + SERVOS_TIME_PULSE_BASE
+					+  p * SERVOS_TIME_OFFSET_PARALLEL + iParallelPulsesTime;
+			servos_asActions[iActionCnt].pServosBSSR = &psServo->pGpioPort->BSRR;
+			servos_asActions[iActionCnt].u32ServosBSSRVal = (uint32_t)psServo->u16GpioPin << 16;
+			servos_asActions[iActionCnt-1].u16ARR = iTimeUs - iTimeUsLast - 1;
+			iTimeUsLast = iTimeUs;
+			iActionCnt++;
 		}
 	}
-	time_us = SERVOS_TIME_PERIODE;
-	servos_actions[action_cnt].pServosBSSR = &u32ServosDummyBSSR;
-	servos_actions[action_cnt].u32ServosBSSRVal = 0;
-	servos_actions[action_cnt-1].u16ARR = time_us - time_us_last - 1;
-	servos_actions_len = action_cnt;
+
+	// Set the last action to a dummy but with time to get a 20ms period
+	iTimeUs = SERVOS_TIME_PERIODE;
+	servos_asActions[iActionCnt].pServosBSSR = &servos_u32DummyBSSR;
+	servos_asActions[iActionCnt].u32ServosBSSRVal = 0;
+	servos_asActions[iActionCnt-1].u16ARR = iTimeUs - iTimeUsLast - 1;
+	servos_iActionLen = iActionCnt;
 }
 
 
 /**
  * Call this function every 1ms from main
  *
+ * It starts the creation of the action tabled triggered from the ISR
+ *
  */
 void SERVOS_Task1ms()
 {
-	if (bServos_RequestUpdate)
+	if (servos_bRequestUpdate)
 	{
 		SERVOS_Update();
-		bServos_RequestUpdate = 0;
+		servos_bRequestUpdate = 0;
 	}
 }
 
 /**
  * ISR
  *
+ * Generates a pulse on one of the 168 GPIOs
+ *
  */
-// __STATIC_INLINE
-void SERVOS_ISR(void)
+__INLINE void SERVOS_ISR(void)
 {
-	*pServosBSSR = u32ServosBSSRVal;
-	//htim6.Instance->ARR = 301;
+	// set port value as fast as possible
+	*servos_pBSSR = servos_u32BSSRVal;
+	// set timer for next edge
+	htim6.Instance->ARR = servos_u16ARR;
 
-
-	htim6.Instance->ARR = u16servosARR;
-
-	servos_actions_cnt++;
-
-
-//	htim6.Instance->ARR = 100;
-
-	if (servos_actions_cnt >= servos_actions_len)
+	// Get the next action for the next IRQ
+	servos_iActionCnt++;
+	if (servos_iActionCnt >= servos_iActionLen)
 	{
-		servos_actions_cnt = 1;
-		bServos_RequestUpdate = 1;
+		servos_iActionCnt = 1;
+		servos_bRequestUpdate = 1;
 	}
-	pServosAction = &servos_actions[servos_actions_cnt];
-	u16servosARR = pServosAction->u16ARR;
-	pServosBSSR = pServosAction->pServosBSSR;
-	u32ServosBSSRVal= pServosAction->u32ServosBSSRVal;
+	servos_pAction = &servos_asActions[servos_iActionCnt];
+	servos_u16ARR = servos_pAction->u16ARR;
+	servos_pBSSR = servos_pAction->pServosBSSR;
+	servos_u32BSSRVal= servos_pAction->u32ServosBSSRVal;
 }
