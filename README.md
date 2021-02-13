@@ -1,6 +1,6 @@
 # 168servos
 
-##A resource saving Servo driver for 168 servos for STM32 microcontrollers
+## A resource saving Servo driver for 168 servos for STM32 microcontrollers
 
 - Servo pulses with no jitter
 - Resolution 0.1% (1000 steps)
@@ -9,7 +9,7 @@
 - Why 168 servos? Beccause 168 is the maximum amount of GPIOs on an STM32
 - Demo project for NUCLEOF746ZG board based on the STM32CubeMxIDE
 
-### Integrate it in your project
+### How to integrate it in your project
 - Copy servos.c and servos.h into your project
 - Configure Timer6 with a prescaler to get a 1µs base time. Diable autoreaload. See tim.c
 - Enable Timer6 IQR with highest priority in the project
