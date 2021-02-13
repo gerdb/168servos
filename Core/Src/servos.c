@@ -39,7 +39,6 @@ uint16_t servos_u16ARR;
 uint32_t servos_u32BSSRVal;
 __IO uint32_t* servos_pBSSR;
 __IO uint32_t servos_u32DummyBSSR;
-SERVO_ACTION_s* servos_pAction;
 
 
 /* Prototypes of static function ---------------------------------------------*/
@@ -75,7 +74,7 @@ void SERVOS_Init()
 	servos_u32BSSRVal = servos_asActions[1].u32ServosBSSRVal = 0;
 	servos_u16ARR     = servos_asActions[1].u16ARR = 1000-1;
 
-	servos_iActionCnt = 0;
+	servos_iActionCnt = 1;
 	servos_iActionLen = 2;
 
 	servos_bRequestUpdate = 0;
@@ -402,8 +401,7 @@ __INLINE void SERVOS_ISR(void)
 		servos_iActionCnt = 1;
 		servos_bRequestUpdate = 1;
 	}
-	servos_pAction = &servos_asActions[servos_iActionCnt];
-	servos_u16ARR = servos_pAction->u16ARR;
-	servos_pBSSR = servos_pAction->pServosBSSR;
-	servos_u32BSSRVal= servos_pAction->u32ServosBSSRVal;
+	servos_u16ARR = servos_asActions[servos_iActionCnt].u16ARR;
+	servos_pBSSR = servos_asActions[servos_iActionCnt].pServosBSSR;
+	servos_u32BSSRVal= servos_asActions[servos_iActionCnt].u32ServosBSSRVal;
 }
